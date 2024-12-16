@@ -1,0 +1,190 @@
+using System;
+using System.Data.SQLite;
+
+public class TeslaCar
+{
+    public int Id { get; set; }
+    public string Model { get; set; }
+    public double HourlyRate { get; set; }
+    public double MileageRate { get; set; }
+}
+
+public class Client
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public string Email { get; set; }
+}
+
+public class Rental
+{
+    public int Id { get; set; }
+    public int ClientId { get; set; }
+    public int CarId { get; set; }
+    public DateTime StartTime { get; set; }
+    public DateTime EndTime { get; set; }
+    public int Mileage { get; set; }
+    public double TotalCost { get; set; }
+}
+
+public class DatabaseHelper
+{
+    private string connectionString = "Data Source=TeslaRental.db;Version=3;";
+
+    public DatabaseHelper() 
+    {
+        // Pārliecināmies, ka datubāze un tabulas ir izveidotas
+        CreateTables();
+    }
+
+    // Izveidot nepieciešamās tabulas
+    public void CreateTables()
+    {
+        using (var connection = new SQLiteConnection(connectionString))
+        {
+            connection.Open();
+            string createTeslaCarsTable = @"
+                CREATE TABLE IF NOT EXISTS TeslaCars (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Model TEXT NOT NULL,
+                    HourlyRate REAL NOT NULL,
+                    MileageRate REAL NOT NULL
+                );";
+
+            string createClientsTable = @"
+                CREATE TABLE IF NOT EXISTS Clients (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Name TEXT NOT NULL,
+                    Email TEXT NOT NULL UNIQUE
+                );";
+
+            string createRentalsTable = @"
+                CREATE TABLE IF NOT EXISTS Rentals (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ClientId INTEGER NOT NULL,
+                    CarId INTEGER NOT NULL,
+                    StartTime DATETIME NOT NULL,
+                    EndTime DATETIME NOT NULL,
+                    Mileage INTEGER NOT NULL,
+                    TotalCost REAL NOT NULL,
+                    FOREIGN KEY (ClientId) REFERENCES Clients(Id),
+                    FOREIGN KEY (CarId) REFERENCES TeslaCars(Id)
+                );";
+
+            using (var command = new SQLiteCommand(createTeslaCarsTable, connection))
+            {
+                command.ExecuteNonQuery();
+            }
+            using (var command = new SQLiteCommand(createClientsTable, connection))
+            {
+                command.ExecuteNonQuery();
+            }
+            using (var command = new SQLiteCommand(createRentalsTable, connection))
+            {
+                command.ExecuteNonQuery();
+            }
+        }
+    }
+
+    // Pievienot jaunu klientu
+    public void AddClient(Client client)
+    {
+        using (var connection = new SQLiteConnection(connectionString))
+        {
+            connection.Open();
+            string query = "INSERT INTO Clients (Name, Email) VALUES (@Name, @Email)";
+            using (var command = new SQLiteCommand(query, connection))
+            {
+                command.Parameters.AddWithValue("@Name", client.Name);
+                command.Parameters.AddWithValue("@Email", client.Email);
+                command.ExecuteNonQuery();
+            }
+        }
+    }
+
+    // Pievienot jaunu automašīnu
+    public void AddTeslaCar(TeslaCar car)
+    {
+        using (var connection = new SQLiteConnection(connectionString))
+        {
+            connection.Open();
+            string query = "INSERT INTO TeslaCars (Model, HourlyRate, MileageRate) VALUES (@Model, @HourlyRate, @MileageRate)";
+            using (var command = new SQLiteCommand(query, connection))
+            {
+                command.Parameters.AddWithValue("@Model", car.Model);
+                command.Parameters.AddWithValue("@HourlyRate", car.HourlyRate);
+                command.Parameters.AddWithValue("@MileageRate", car.MileageRate);
+                command.ExecuteNonQuery();
+            }
+        }
+    }
+
+    // Veikt īres aprēķinu un saglabāt īres ierakstu
+    public void AddRental(Rental rental)
+    {
+        using (var connection = new SQLiteConnection(connectionString))
+        {
+            connection.Open();
+            string query = @"
+                INSERT INTO Rentals (ClientId, CarId, StartTime, EndTime, Mileage, TotalCost) 
+                VALUES (@ClientId, @CarId, @StartTime, @EndTime, @Mileage, @TotalCost)";
+
+            using (var command = new SQLiteCommand(query, connection))
+            {
+                command.Parameters.AddWithValue("@ClientId", rental.ClientId);
+                command.Parameters.AddWithValue("@CarId", rental.CarId);
+                command.Parameters.AddWithValue("@StartTime", rental.StartTime);
+                command.Parameters.AddWithValue("@EndTime", rental.EndTime);
+                command.Parameters.AddWithValue("@Mileage", rental.Mileage);
+                command.Parameters.AddWithValue("@TotalCost", rental.TotalCost);
+                command.ExecuteNonQuery();
+            }
+        }
+    }
+
+    // Aprēķināt maksu par īri
+    public double CalculateRentalCost(TeslaCar car, DateTime startTime, DateTime endTime, int mileage)
+    {
+        double rentalDuration = (endTime - startTime).TotalHours;
+        double cost = (rentalDuration * car.HourlyRate) + (mileage * car.MileageRate);
+        return cost;
+    }
+}
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        var dbHelper = new DatabaseHelper();
+
+        // Pievienot klientu
+        var client = new Client { Name = "Jānis Bērziņš", Email = "janis@example.com" };
+        dbHelper.AddClient(client);
+
+        // Pievienot automašīnu
+        var car = new TeslaCar { Model = "Model 3", HourlyRate = 20, MileageRate = 0.15 };
+        dbHelper.AddTeslaCar(car);
+
+        // Piemērs: īres aprēķins
+        DateTime startTime = DateTime.Now;
+        DateTime endTime = startTime.AddHours(5); // 5 stundas
+        int mileage = 150; // 150 km
+
+        double totalCost = dbHelper.CalculateRentalCost(car, startTime, endTime, mileage);
+        Console.WriteLine($"Total cost: {totalCost} EUR");
+
+        // Pievienot īres ierakstu
+        var rental = new Rental
+        {
+            ClientId = 1, // Pieņemam, ka klienta ID ir 1
+            CarId = 1,    // Pieņemam, ka automašīnas ID ir 1
+            StartTime = startTime,
+            EndTime = endTime,
+            Mileage = mileage,
+            TotalCost = totalCost
+        };
+        dbHelper.AddRental(rental);
+
+        Console.WriteLine("Client, Car, and Rental record have been added successfully.");
+    }
+}
